@@ -1,11 +1,9 @@
-from smoltools.noesy_neighbors.main import (
-    get_labeled_carbons,
+from smoltools.pdbtools.load import (
+    read_pdb_from_path, 
+    get_atom_names_by_residue,
+)
+from smoltools.pdbtools.coordinates import (
     coordinate_table,
-    coordinates_from_chain,
-    coordinates_from_path,
-    coordinates_from_path_presets,
-    LABELING_SCHEMES,
-    LABELED_CARBONS,
 )
 from smoltools.noesy_neighbors.utils import (
     splice_conformation_tables,

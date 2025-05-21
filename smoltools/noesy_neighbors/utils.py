@@ -51,14 +51,14 @@ def splice_conformation_tables(
     )
 
 
-def add_noe_bins(df: pd.DataFrame) -> pd.DataFrame:
-    """Add column converting distance into relative NOE strength."""
+def add_noe_bins(df: pd.DataFrame, bins, labels) -> pd.DataFrame:
+    """Add NOE strength bins based on user bins."""
     return df.assign(
-        noe_strength=lambda x: pd.cut(
-            x.distance,
-            bins=[0, 5, 8, 10, np.inf],
+        noe_strength=pd.cut(
+            df.distance,
+            bins=bins,
             include_lowest=True,
-            labels=['strong', 'medium', 'weak', 'none'],
+            labels=labels,
             ordered=True,
         )
     )

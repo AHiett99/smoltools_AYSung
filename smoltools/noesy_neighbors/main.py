@@ -1,12 +1,12 @@
 #use to launch GUI
 import sys
 from PyQt5.QtWidgets import QApplication
-from smoltools.noesy_neighbors.pyqt5gui import PDBAtomSelector, MainWindow
+from smoltools.noesy_neighbors.pyqt5gui import MainWindow
 
 def main():
     app = QApplication(sys.argv)
     window = MainWindow()
-    window.setWindowTitle("PDB Selector and Bin Thresholds")
+    window.setWindowTitle("NOESY Neighbors - created by Andrew Sung")
     window.show()
     sys.exit(app.exec_())
 

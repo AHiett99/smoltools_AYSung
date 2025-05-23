@@ -1,3 +1,4 @@
+'''collection of functions used for finding inter and intra-chain distances'''
 import pandas as pd
 import numpy as np
 import smoltools.pdbtools.pdb_select as pdb_select
@@ -31,17 +32,13 @@ def calculate_distances_by_chain(df_dict: dict[str, pd.DataFrame]) -> tuple[dict
     for i, chain_i in enumerate(chains):
         df_i = df_dict[chain_i]
 
-        # ✅ Store one intra-chain distance matrix PER chain
+        #Store one intra-chain distance matrix PER chain
         intra[chain_i] = pairwise_distances(df_i)
 
-        # Inter-chain distances (pairwise)
+        #Inter-chain distances (pairwise)
         for j in range(i + 1, len(chains)):
             chain_j = chains[j]
             df_j = df_dict[chain_j]
             inter[(chain_i, chain_j)] = pairwise_distances(df_i, df_j)
 
     return intra, inter
-
-def _pairwise_distance(df_a: pd.DataFrame, df_b: pd.DataFrame) -> np.ndarray:
-    """Return the euclidean distance between all 3D coordinates."""
-    return ssd.cdist(df_a, df_b, 'euclidean')

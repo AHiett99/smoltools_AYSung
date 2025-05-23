@@ -14,5 +14,3 @@ from smoltools.calculate.distance import (
     pairwise_distances_between_conformations,
     pairwise_distances,
 )
-
-import smoltools.noesy_neighbors.plots as plots

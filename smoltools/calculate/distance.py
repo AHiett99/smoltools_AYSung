@@ -15,14 +15,12 @@ def _tidy_pairwise_distances(df: pd.DataFrame) -> pd.DataFrame:
     """Take a square dataframe of pairwise distances and convert it to tidy format."""
     return df.melt(value_name='distance', ignore_index=False).reset_index()
 
-
 def pairwise_distances(df_a: pd.DataFrame, df_b: pd.DataFrame = None) -> pd.DataFrame:
     """Given two dataframes with 3D coordinates of each residue, calculate the pairwise
     distance between each residue and return in tidy form.
     """
     if df_b is None:
         df_b = df_a
-
     return (
         pd.DataFrame(
             _pairwise_distance(df_a, df_b),

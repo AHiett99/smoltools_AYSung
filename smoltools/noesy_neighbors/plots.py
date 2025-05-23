@@ -270,3 +270,9 @@ def distance_scatter(df: pd.DataFrame, noe_threshold: float) -> alt.Chart:
             height=SIZE,
         )
     )
+
+def make_chart_title(key):
+    if isinstance(key, tuple) and len(key) == 2:
+        return f"{key[0]}-{key[1]}"
+    else:
+        return f"{key}"

@@ -1,14 +1,46 @@
+'''gui logic & plotting'''
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QFileDialog, QListWidget, QListWidgetItem, QLabel, QGroupBox, QHBoxLayout, QScrollArea, QDoubleSpinBox, QMessageBox)
 import pandas as pd
-from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QPushButton,
-    QFileDialog, QListWidget, QListWidgetItem, QLabel, QGroupBox, QCheckBox, QHBoxLayout, QScrollArea, QDoubleSpinBox
-)
-from smoltools.noesy_neighbors import read_pdb_from_path, get_atom_names_by_residue
+from smoltools.pdbtools.load import read_pdb_from_path, get_atom_names_by_residue
 from smoltools.noesy_neighbors.chains import generate_df_chains, calculate_distances_by_chain
-from smoltools.noesy_neighbors.utils import add_noe_bins
-from smoltools.noesy_neighbors.plots import make_chart_title
 from pathlib import Path
+import panel as pn
 import altair as alt
+alt.data_transformers.disable_max_rows()
+
+def export_charts(titles, tables, charts, parent_widget=None):
+    msg = QMessageBox()
+    msg.setIcon(QMessageBox.Information)
+    msg.setWindowTitle("Export Charts")
+    msg.setText("Please select the folder where the HTML files will be saved. This may take a moment!")
+    msg.exec_()
+    
+    #Ask where to save
+    folder = QFileDialog.getExistingDirectory(parent_widget, "Select Folder to Save Charts")
+
+    if folder:
+        folder_path = Path(folder)
+        
+        charts_dir = folder_path / 'charts'
+        charts_dir.mkdir(parents=True, exist_ok=True)
+
+        tables_dir = folder_path / 'tables'
+        tables_dir.mkdir(parents=True, exist_ok=True)
+
+    for title, chart in zip(titles, charts):
+        file_path = charts_dir / f"{title}_chart.html"
+        chart.save(str(file_path))
+
+    for title, table in zip(titles, tables):
+        file_path = tables_dir / f"{title}_table.html"
+        panel_table = pn.widgets.Tabulator(table, pagination=None)
+        panel_table.save(str(file_path))
+    
+    msg = QMessageBox()
+    msg.setIcon(QMessageBox.NoIcon)
+    msg.setWindowTitle("Export Charts")
+    msg.setText(f"Success! Saved {len(charts)} charts and {len(tables)} tables to {folder}.")
+    msg.exec_()
 
 class PDBAtomSelector(QWidget):
     def __init__(self, parent=None):
@@ -48,44 +80,6 @@ class PDBAtomSelector(QWidget):
         except Exception as e:
             self.selector_label.setText(f"Failed to load PDB: {e}")
 
-    def calculate_distances(self):
-        labeled_atoms = self.get_labeled_atoms_dict()
-        if not labeled_atoms:
-            self.selector_label.setText("No atoms selected!")
-            return
-
-        structure = self.get_structure()
-        if structure is None:
-            self.selector_label.setText("No PDB loaded!")
-            return
-
-        try:
-            df_chains = generate_df_chains(structure, labeled_atoms)
-            intra, inter = calculate_distances_by_chain(df_chains)
-
-            # Save for use later
-            self.intra_chain_dfs = intra
-            self.inter_chain_dfs = inter
-
-            # print("Intra-chain distances:")
-            # for chain_id, df in intra.items():
-            #     print(f"Chain {chain_id}:")
-            #     print(df.head(20))
-
-            # print("Inter-chain distances:")
-            # for (chain1, chain2), df in inter.items():
-            #     print(f"Between {chain1} and {chain2}:")
-            #     print(df.head(20))
-
-            self.selector_label.setText(
-                f"Calculated distances for {len(df_chains)} chains: "
-                f"{len(intra)} intra-chain, {len(inter)} inter-chain."
-            )
-
-        except Exception as e:
-            self.selector_label.setText(f"Error: {str(e)}")
-
-
     def populate_atom_lists(self):
         content = QWidget()
         atom_layout = QVBoxLayout(content)
@@ -115,29 +109,49 @@ class PDBAtomSelector(QWidget):
             if selected_atoms:
                 atoms_dict[resname] = selected_atoms
         return atoms_dict
-
-    def get_structure(self):
-        return self.structure   
     
-    def get_data(self) -> dict[str, pd.DataFrame]:
-        """
-        Return a dictionary of all intra- and inter-chain distance DataFrames.
-        Keys will indicate the chain or chain pair.
-        """
-        if not hasattr(self, 'intra_chain_dfs') or not hasattr(self, 'inter_chain_dfs'):
-            print("No distances calculated yet.")
-            return {}
+    def calculate_distances(self):
+        labeled_atoms = self.get_labeled_atoms_dict()
+        if not labeled_atoms:
+            self.selector_label.setText("No atoms selected!")
+            return
 
-        combined = {}
+        structure = self.get_structure()
+        if structure is None:
+            self.selector_label.setText("No PDB loaded!")
+            return
 
-        for chain_id, df in self.intra_chain_dfs.items():
-            combined[f"Intra-Chain distances: Atom 1 and Atom 2 = Chain {chain_id}"] = df
+        try:
+            df_chains = generate_df_chains(structure, labeled_atoms)
+            intra, inter = calculate_distances_by_chain(df_chains)
 
-        for (chain1, chain2), df in self.inter_chain_dfs.items():
-            combined[f"Inter-chain distances: Atom 1 = Chain {chain1} and Atom 2 = Chain {chain2}"] = df
+            self.intra_chain_dfs = intra
+            self.inter_chain_dfs = inter
 
-        return combined
+            self.selector_label.setText(
+                f"Calculated distances for {len(df_chains)} chains: "
+                f"{len(intra)} intra-chain, {len(inter)} inter-chain."
+            )
 
+        except Exception as e:
+            self.selector_label.setText(f"Error: {str(e)}")
+    
+    def get_structure(self):
+        return self.structure  
+
+def add_noe_bins(df: pd.DataFrame, bins, labels) -> pd.DataFrame:
+    """Add NOE strength bins based on user bins."""
+    df = df.assign(
+        noe_strength=pd.cut(
+            df.distance,
+            bins=bins,
+            include_lowest=True,
+            labels=labels,
+            ordered=True,
+        )
+    )
+    df['noe_strength'] = df['noe_strength'].astype(str)
+    return df
 
 class BinThresholdWidget(QWidget):
     def __init__(self):
@@ -174,7 +188,7 @@ class BinThresholdWidget(QWidget):
         medium = self.medium_spin.value()
         weak = self.weak_spin.value()
 
-        # Validate ascending order (optional)
+        # Validate ascending order
         if not (strong < medium < weak):
             raise ValueError("Thresholds must be strictly ascending: strong < medium < weak")
 
@@ -198,57 +212,96 @@ class MainWindow(QWidget):
         self.setLayout(layout)
 
         self.bins.plot_btn.clicked.connect(self.handle_plot)
-        
-    def handle_plot(self):
-        try:
-            bins, labels = self.bins.get_bins()
-        except ValueError as e:
-            print("Error:", e)
-            return
 
+    def handle_plot(self):
         #calculate distances
+        bins, labels = self.bins.get_bins()
         print("Calculating distance data now...")
         self.selector.calculate_distances()
         
-        dfs = self.selector.get_data()
-
+        tables = []
         charts = []
-        for chain, df in dfs.items():
+        titles = []
+        for chain, df in self.selector.intra_chain_dfs.items():
             
             df_binned = add_noe_bins(df, bins, labels)
             n_x = df_binned['id_1'].nunique()
             n_y = df_binned['id_2'].nunique()
 
-            size_per_atom = 10
-            max_size = 1000
+            size_per_atom = 20
+            max_size = 2000
             width = min(n_x * size_per_atom, max_size)
             height = min(n_y * size_per_atom, max_size)
 
-            title = make_chart_title(chain)
+            title = 'Expected Intra-chain NOEs'
 
-            # Your plotting code here, e.g. saving to HTML and opening in browser
+            #Make tables
+            table = df_binned.rename(columns={'id_1':f'Atom #1: Chain {chain}', 'id_2':f'Atom #2: Chain {chain}', 'distance':'Distance', 'noe_strength':'NOE strength'})
+            table = table[table['NOE strength'].str.contains('none') == False]
+            mask = table['Distance'] == 0.0
+            table = table[~mask]
+            tables.append(table)
+
+            #make charts
             chart = alt.Chart(df_binned).mark_rect().encode(
-                x=alt.X('id_1', title='Atom #1', sort=None, axis=alt.Axis(labelFontSize=5)),
-                y=alt.Y('id_2', title='Atom #2', sort=None, axis=alt.Axis(labelFontSize=5)),
+                x=alt.X('id_1', title=f'Chain {chain}', sort=None, axis=alt.Axis(labelFontSize=10)),
+                y=alt.Y('id_2', title=f'Chain {chain}', sort=None, axis=alt.Axis(labelFontSize=10)),
                 color=alt.Color(
                     'noe_strength',
                     title='NOE Strength',
                     scale=alt.Scale(domain=labels, scheme='blues', reverse=True)
                 ),
                 tooltip=[
-                    alt.Tooltip('id_1', title='Atom #1'),
-                    alt.Tooltip('id_2', title='Atom #2'),
+                    alt.Tooltip('id_1', title=f'Atom #1: Chain {chain}'),
+                    alt.Tooltip('id_2', title=f'Atom #2: Chain {chain}'),
                     alt.Tooltip('distance', title='Distance (Å)', format='.2f'),
                     alt.Tooltip('noe_strength', title='NOE Strength'),
                 ]
             ).properties(width=width, height=height, title=title)
+            chart_interactive = chart.interactive()
+            charts.append(chart_interactive)
+            titles.append(str(f'Intra-chain_{chain}'))
 
-            charts.append(chart)
+        for (chain1, chain2), df in self.selector.inter_chain_dfs.items():
 
-        combined = alt.vconcat(*charts)
-        combined.save('./noe_charts.html')
-        print("Saved noe_charts.html")
-            
-        #open in browser:
-        import webbrowser
-        webbrowser.open('./noe_charts.html')
+            df_binned = add_noe_bins(df, bins, labels)
+            table = df_binned.rename(columns={'id_1':f'Atom #1: Chain {chain1}', 'id_2':f'Atom #2: Chain {chain2}', 'distance':'Distance', 'noe_strength':'NOE strength'})
+            n_x = df_binned['id_1'].nunique()
+            n_y = df_binned['id_2'].nunique()
+
+            size_per_atom = 20
+            max_size = 2000
+            width = min(n_x * size_per_atom, max_size)
+            height = min(n_y * size_per_atom, max_size)
+
+            title = 'Expected Inter-chain NOEs'
+
+            #Make tables
+            table = df_binned.rename(columns={'id_1':f'Atom #1: Chain {chain1}', 'id_2':f'Atom #2: Chain {chain2}', 'distance':'Distance', 'noe_strength':'NOE strength'})
+            table = table[table['NOE strength'].str.contains('none') == False]
+            mask = table['Distance'] == 0.0
+            table = table[~mask]
+            tables.append(table)
+
+            #make charts
+            chart = alt.Chart(df_binned).mark_rect().encode(
+                x=alt.X('id_1', title=f'Chain {chain1}', sort=None, axis=alt.Axis(labelFontSize=10)),
+                y=alt.Y('id_2', title=f'Chain {chain2}', sort=None, axis=alt.Axis(labelFontSize=10)),
+                color=alt.Color(
+                    'noe_strength',
+                    title='NOE Strength',
+                    scale=alt.Scale(domain=labels, scheme='blues', reverse=True)
+                ),
+                tooltip=[
+                    alt.Tooltip('id_1', title=f'Atom #1: Chain {chain1}'),
+                    alt.Tooltip('id_2', title=f'Atom #2: Chain {chain2}'),
+                    alt.Tooltip('distance', title='Distance (Å)', format='.2f'),
+                    alt.Tooltip('noe_strength', title='NOE Strength'),
+                ]
+            ).properties(width=width, height=height, title=title)
+            chart_interactive = chart.interactive()
+            charts.append(chart_interactive)
+            titles.append(str(f'Inter-chains_{chain1}-{chain2}'))
+        
+        export_charts(titles, tables, charts, parent_widget=self)
+        self.close()

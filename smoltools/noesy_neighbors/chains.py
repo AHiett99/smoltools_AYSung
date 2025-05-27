@@ -1,9 +1,9 @@
-'''collection of functions used for finding inter and intra-chain distances'''
+'''Functions to generate chains and apply distance calculations to chains'''
 import pandas as pd
 import numpy as np
 import smoltools.pdbtools.pdb_select as pdb_select
 from smoltools.pdbtools.load import get_labeled_atoms
-from smoltools.pdbtools import coordinate_table
+from smoltools.pdbtools.coordinates import coordinate_table
 from smoltools.calculate.distance import pairwise_distances
 
 def generate_df_chains(structure, labeled_atoms: dict[str, list[str]]) -> dict[str, pd.DataFrame]:

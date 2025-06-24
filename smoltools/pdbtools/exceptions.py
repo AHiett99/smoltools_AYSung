@@ -3,7 +3,6 @@ class ChainNotFound(KeyError):
         message = f'Chain {structure_id}/{model_id}/{chain_id} not in structure'
         super().__init__(message)
 
-
 class NoResiduesFound(ValueError):
     def __init__(self) -> None:
         message = 'No residues matching filter criteria found.'

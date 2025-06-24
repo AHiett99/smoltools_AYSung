@@ -5,21 +5,30 @@ import smoltools.pdbtools.pdb_select as pdb_select
 from smoltools.pdbtools.load import get_labeled_atoms
 from smoltools.pdbtools.coordinates import coordinate_table
 from smoltools.calculate.distance import pairwise_distances
+from smoltools.pdbtools.exceptions import NoResiduesFound
 
 def generate_df_chains(structure, labeled_atoms: dict[str, list[str]]) -> dict[str, pd.DataFrame]:
     """Extract coordinate DataFrames per chain from a structure using selected atoms."""
     df_dict = {}
     for model in structure.get_models():
         for chain in model.get_chains():
-            residues = pdb_select.get_residues(chain, residue_filter=set(labeled_atoms.keys()))
-            atoms = get_labeled_atoms(residues, labeled_atoms)
-            if atoms:
+            try:
+                residues = pdb_select.get_residues(chain, residue_filter=set(labeled_atoms.keys()))
+                atoms = get_labeled_atoms(residues, labeled_atoms)
+                if not atoms:
+                    continue
+
                 df = (
                     coordinate_table(atoms)
                     .assign(id=lambda x: x.residue_name + x.residue_number.astype(str) + '-' + x.atom_id)
                     .set_index('id')[['x', 'y', 'z']]
                 )
-                df_dict[chain.id] = df
+
+                if not df.empty:
+                    df_dict[chain.id] = df
+
+            except NoResiduesFound:
+                continue 
     return df_dict
 
 def calculate_distances_by_chain(df_dict: dict[str, pd.DataFrame]) -> tuple[dict, dict]:

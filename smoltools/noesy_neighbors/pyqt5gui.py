@@ -39,7 +39,7 @@ def export_charts(titles, tables, charts, parent_widget=None):
     msg = QMessageBox()
     msg.setIcon(QMessageBox.NoIcon)
     msg.setWindowTitle("Export Charts")
-    msg.setText(f"Success! Saved {len(charts)} charts and {len(tables)} tables to {folder}.")
+    msg.setText(f"Success! Saved {len(charts)} chart(s) and {len(tables)} table(s) to {folder}.")
     msg.exec_()
 
 class PDBAtomSelector(QWidget):
@@ -121,20 +121,22 @@ class PDBAtomSelector(QWidget):
             self.selector_label.setText("No PDB loaded!")
             return
 
-        try:
-            df_chains = generate_df_chains(structure, labeled_atoms)
-            intra, inter = calculate_distances_by_chain(df_chains)
+        df_chains = generate_df_chains(structure, labeled_atoms)
 
-            self.intra_chain_dfs = intra
-            self.inter_chain_dfs = inter
+        if not df_chains:
+            self.intra_chain_dfs = {}
+            self.inter_chain_dfs = {}
+            return
+        
+        intra, inter = calculate_distances_by_chain(df_chains)
 
-            self.selector_label.setText(
-                f"Calculated distances for {len(df_chains)} chains: "
-                f"{len(intra)} intra-chain, {len(inter)} inter-chain."
-            )
+        self.intra_chain_dfs = intra
+        self.inter_chain_dfs = inter
 
-        except Exception as e:
-            self.selector_label.setText(f"Error: {str(e)}")
+        self.selector_label.setText(
+            f"Calculated distances for {len(df_chains)} chains: "
+            f"{len(intra)} intra-chain, {len(inter)} inter-chain."
+        )
     
     def get_structure(self):
         return self.structure  
@@ -196,7 +198,10 @@ class BinThresholdWidget(QWidget):
         labels = ['strong', 'medium', 'weak', 'none']
 
         return bins, labels
-    
+
+tables = []
+charts = []
+titles = []
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -219,89 +224,92 @@ class MainWindow(QWidget):
         print("Calculating distance data now...")
         self.selector.calculate_distances()
         
-        tables = []
-        charts = []
-        titles = []
-        for chain, df in self.selector.intra_chain_dfs.items():
+        if self.selector.intra_chain_dfs:
+            for chain, df in self.selector.intra_chain_dfs.items():
+                
+                df_binned = add_noe_bins(df, bins, labels)
+                n_x = df_binned['id_1'].nunique()
+                n_y = df_binned['id_2'].nunique()
+
+                size_per_atom = 20
+                max_size = 2000
+                width = min(n_x * size_per_atom, max_size)
+                height = min(n_y * size_per_atom, max_size)
+
+                title = 'Expected Intra-chain NOEs'
+
+                #Make tables
+                table = df_binned.rename(columns={'id_1':f'Atom #1: Chain {chain}', 'id_2':f'Atom #2: Chain {chain}', 'distance':'Distance', 'noe_strength':'NOE strength'})
+                table = table[table['NOE strength'].str.contains('none') == False]
+                mask = table['Distance'] == 0.0
+                table = table[~mask]
+                tables.append(table)
+
+                #make charts
+                chart = alt.Chart(df_binned).mark_rect().encode(
+                    x=alt.X('id_1', title=f'Chain {chain}', sort=None, axis=alt.Axis(labelFontSize=10)),
+                    y=alt.Y('id_2', title=f'Chain {chain}', sort=None, axis=alt.Axis(labelFontSize=10)),
+                    color=alt.Color(
+                        'noe_strength',
+                        title='NOE Strength',
+                        scale=alt.Scale(domain=labels, scheme='blues', reverse=True)
+                    ),
+                    tooltip=[
+                        alt.Tooltip('id_1', title=f'Atom #1: Chain {chain}'),
+                        alt.Tooltip('id_2', title=f'Atom #2: Chain {chain}'),
+                        alt.Tooltip('distance', title='Distance (Å)', format='.2f'),
+                        alt.Tooltip('noe_strength', title='NOE Strength'),
+                    ]
+                ).properties(width=width, height=height, title=title)
+                chart_interactive = chart.interactive()
+                charts.append(chart_interactive)
+                titles.append(str(f'Intra-chain_{chain}'))
+
+        if self.selector.inter_chain_dfs:
+            for (chain1, chain2), df in self.selector.inter_chain_dfs.items():
+
+                df_binned = add_noe_bins(df, bins, labels)
+                table = df_binned.rename(columns={'id_1':f'Atom #1: Chain {chain1}', 'id_2':f'Atom #2: Chain {chain2}', 'distance':'Distance', 'noe_strength':'NOE strength'})
+                n_x = df_binned['id_1'].nunique()
+                n_y = df_binned['id_2'].nunique()
+
+                size_per_atom = 20
+                max_size = 2000
+                width = min(n_x * size_per_atom, max_size)
+                height = min(n_y * size_per_atom, max_size)
+
+                title = 'Expected Inter-chain NOEs'
+
+                #Make tables
+                table = df_binned.rename(columns={'id_1':f'Atom #1: Chain {chain1}', 'id_2':f'Atom #2: Chain {chain2}', 'distance':'Distance', 'noe_strength':'NOE strength'})
+                table = table[table['NOE strength'].str.contains('none') == False]
+                mask = table['Distance'] == 0.0
+                table = table[~mask]
+                tables.append(table)
+
+                #make charts
+                chart = alt.Chart(df_binned).mark_rect().encode(
+                    x=alt.X('id_1', title=f'Chain {chain1}', sort=None, axis=alt.Axis(labelFontSize=10)),
+                    y=alt.Y('id_2', title=f'Chain {chain2}', sort=None, axis=alt.Axis(labelFontSize=10)),
+                    color=alt.Color(
+                        'noe_strength',
+                        title='NOE Strength',
+                        scale=alt.Scale(domain=labels, scheme='blues', reverse=True)
+                    ),
+                    tooltip=[
+                        alt.Tooltip('id_1', title=f'Atom #1: Chain {chain1}'),
+                        alt.Tooltip('id_2', title=f'Atom #2: Chain {chain2}'),
+                        alt.Tooltip('distance', title='Distance (Å)', format='.2f'),
+                        alt.Tooltip('noe_strength', title='NOE Strength'),
+                    ]
+                ).properties(width=width, height=height, title=title)
+                chart_interactive = chart.interactive()
+                charts.append(chart_interactive)
+                titles.append(str(f'Inter-chains_{chain1}-{chain2}'))
             
-            df_binned = add_noe_bins(df, bins, labels)
-            n_x = df_binned['id_1'].nunique()
-            n_y = df_binned['id_2'].nunique()
-
-            size_per_atom = 20
-            max_size = 2000
-            width = min(n_x * size_per_atom, max_size)
-            height = min(n_y * size_per_atom, max_size)
-
-            title = 'Expected Intra-chain NOEs'
-
-            #Make tables
-            table = df_binned.rename(columns={'id_1':f'Atom #1: Chain {chain}', 'id_2':f'Atom #2: Chain {chain}', 'distance':'Distance', 'noe_strength':'NOE strength'})
-            table = table[table['NOE strength'].str.contains('none') == False]
-            mask = table['Distance'] == 0.0
-            table = table[~mask]
-            tables.append(table)
-
-            #make charts
-            chart = alt.Chart(df_binned).mark_rect().encode(
-                x=alt.X('id_1', title=f'Chain {chain}', sort=None, axis=alt.Axis(labelFontSize=10)),
-                y=alt.Y('id_2', title=f'Chain {chain}', sort=None, axis=alt.Axis(labelFontSize=10)),
-                color=alt.Color(
-                    'noe_strength',
-                    title='NOE Strength',
-                    scale=alt.Scale(domain=labels, scheme='blues', reverse=True)
-                ),
-                tooltip=[
-                    alt.Tooltip('id_1', title=f'Atom #1: Chain {chain}'),
-                    alt.Tooltip('id_2', title=f'Atom #2: Chain {chain}'),
-                    alt.Tooltip('distance', title='Distance (Å)', format='.2f'),
-                    alt.Tooltip('noe_strength', title='NOE Strength'),
-                ]
-            ).properties(width=width, height=height, title=title)
-            chart_interactive = chart.interactive()
-            charts.append(chart_interactive)
-            titles.append(str(f'Intra-chain_{chain}'))
-
-        for (chain1, chain2), df in self.selector.inter_chain_dfs.items():
-
-            df_binned = add_noe_bins(df, bins, labels)
-            table = df_binned.rename(columns={'id_1':f'Atom #1: Chain {chain1}', 'id_2':f'Atom #2: Chain {chain2}', 'distance':'Distance', 'noe_strength':'NOE strength'})
-            n_x = df_binned['id_1'].nunique()
-            n_y = df_binned['id_2'].nunique()
-
-            size_per_atom = 20
-            max_size = 2000
-            width = min(n_x * size_per_atom, max_size)
-            height = min(n_y * size_per_atom, max_size)
-
-            title = 'Expected Inter-chain NOEs'
-
-            #Make tables
-            table = df_binned.rename(columns={'id_1':f'Atom #1: Chain {chain1}', 'id_2':f'Atom #2: Chain {chain2}', 'distance':'Distance', 'noe_strength':'NOE strength'})
-            table = table[table['NOE strength'].str.contains('none') == False]
-            mask = table['Distance'] == 0.0
-            table = table[~mask]
-            tables.append(table)
-
-            #make charts
-            chart = alt.Chart(df_binned).mark_rect().encode(
-                x=alt.X('id_1', title=f'Chain {chain1}', sort=None, axis=alt.Axis(labelFontSize=10)),
-                y=alt.Y('id_2', title=f'Chain {chain2}', sort=None, axis=alt.Axis(labelFontSize=10)),
-                color=alt.Color(
-                    'noe_strength',
-                    title='NOE Strength',
-                    scale=alt.Scale(domain=labels, scheme='blues', reverse=True)
-                ),
-                tooltip=[
-                    alt.Tooltip('id_1', title=f'Atom #1: Chain {chain1}'),
-                    alt.Tooltip('id_2', title=f'Atom #2: Chain {chain2}'),
-                    alt.Tooltip('distance', title='Distance (Å)', format='.2f'),
-                    alt.Tooltip('noe_strength', title='NOE Strength'),
-                ]
-            ).properties(width=width, height=height, title=title)
-            chart_interactive = chart.interactive()
-            charts.append(chart_interactive)
-            titles.append(str(f'Inter-chains_{chain1}-{chain2}'))
+        if charts and tables:
+            export_charts(titles, tables, charts, parent_widget=self)
+        else:
+            QMessageBox.information(MainWindow, "No Data", "No NOE distances to plot or export.")
         
-        export_charts(titles, tables, charts, parent_widget=self)
         self.close()
